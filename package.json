@@ -1,0 +1,24 @@
+{
+  "name": "create-vhost",
+  "version": "1.0.0",
+  "description": "NodeJS tool to create new vhost on debian with apache/nginx.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js --domain=monsite.com --subdomain=www --subsite=site --certbot --hook && node src/index.js --domain=monsite.com --subdomain=app --certbot --hook && node src/index --domain=mywebsite.org --subdomain=www --hook"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EmmanuelBeziat/node-create-vhost.git"
+  },
+  "author": "Emmanuel Béziat <contact@emmanuelbeziat.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/EmmanuelBeziat/node-create-vhost/issues"
+  },
+  "homepage": "https://github.com/EmmanuelBeziat/node-create-vhost#readme",
+  "dependencies": {
+    "fs-extra": "^10.0.0",
+    "yargs": "^17.3.0"
+  }
+}
