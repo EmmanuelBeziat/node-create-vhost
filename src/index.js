@@ -1,21 +1,22 @@
+#! /usr/bin/env node
+
 import fs from 'fs-extra'
 import { exec } from 'child_process'
-import yargs from 'yargs'
-import { hideBin } from 'yargs/helpers'
+import { Command } from 'commander/esm.mjs'
 
-const args = yargs(hideBin(process.argv)).parse()
+const program = new Command()
+program
+	.requiredOption('--name <name>', 'The name of the website (Usually, the domain without extension)')
+	.requiredOption('--domain <domain>', 'The domain of the website')
+	.option('--subdomain <subdomain>', 'The subdomain of the website', 'www')
+	.option('--subfolder <subfolder>', 'The subfolder of the website', 'site')
+	.option('--root <root>', 'The root directory of the website', '/var/www/')
+	.option('--port <port>', 'The port of the website', 80)
+	.option('--hook <passphrase>', 'Create a webhook to use with github')
+	.option('--ssl', 'Use certbot for creating SSL certificates')
+	.parse()
 
-const params = {
-	'name': args.domain.split('.')[0],
-	'rootPath': `/var/www/${args.domain.split('.')[0]}/${args.subdomain}`,
-	'domain': args.domain,
-	'subdomain': args.subdomain || 'www',
-	'subsite': args.subsite || args.subdomain || 'site',
-	'port': args.port || '8085',
-	'hook': args.hook,
-	'hookPassphrase': args.hookpass || '',
-	'certbot': args.certbot
-}
+const options = program.opts()
 
 const colors = {
 	reset: "\x1b[0m",
@@ -56,72 +57,77 @@ const createFolder = async path => !fs.existsSync(path) && fs.mkdirSync(path, { 
  * Apache Vhost
  */
 const apacheVhost = () => {
-	const content = `# ${params.subsite}
-<VirtualHost *:${params.port}>
+	const content = `# ${options.subfolder}
+<VirtualHost *:${options.port}>
 	# Server
-	ServerName ${params.subdomain}.${params.domain}
-	ServerAlias ${params.subdomain}.${params.domain}
-	ServerAdmin contact@${params.domain}
+	ServerName ${options.subdomain}.${options.domain}
+	ServerAlias ${options.subdomain}.${options.domain}
+	ServerAdmin contact@${options.domain}
 
-	DocumentRoot ${params.rootPath}
+	DocumentRoot ${options.rootPath}
 
 	# Logs
-	ErrorLog \${APACHE_LOG_DIR}/${params.name}/${params.subsite}_error.log
-	CustomLog \${APACHE_LOG_DIR}/${params.name}/${params.subsite}_access.log combined
+	ErrorLog \${APACHE_LOG_DIR}/${options.name}/${options.subfolder}_error.log
+	CustomLog \${APACHE_LOG_DIR}/${options.name}/${options.subfolder}_access.log combined
 </VirtualHost>
 
 `
 
-	fs.outputFile(`./outputs/apache2/${params.name}.conf`, content, { flag: 'a+' })
-		.then(() => console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Apache Vhost created`, colors.reset))
-		.catch(err => console.error(colors.fg.red, `${params.name} ${params.subdomain} → ❌ ${err}`, colors.reset))
+	fs.outputFile(`./outputs/apache2/${options.name}.conf`, content, { flag: 'a+' })
+		.then(() => console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Apache Vhost created`, colors.reset))
+		.catch(err => console.error(colors.fg.red, `${options.name} ${options.subdomain} → ❌ ${err}`, colors.reset))
 }
 
 /**
  * Nginx Vhost
  */
 const nginxVhost = () => {
-	const content = `# ${params.subsite}
+	const content = `# ${options.subfolder}
 server {
-	listen 80;
-	server_name ${params.subdomain}.${params.domain};
+	listen ${options.ssl ? '443 ssl http2' : '80'};};
+	server_name ${options.subdomain}.${options.domain};
 
 	include snippets/favicon_error.conf;
 
 	location ~* ^.+.(jpg|jpeg|gif|css|png|js|ico|txt|srt|swf|woff|woff2)$ {
-		root ${params.rootPath}/;
+		root ${options.rootPath}/;
 		expires 30d;
 	}
 
 	location / {
-		proxy_pass http://127.0.0.1:${params.port}/;
+		proxy_pass http://127.0.0.1:${options.port}/;
 		include /etc/nginx/conf.d/proxy.conf;
-		root ${params.rootPath}/;
+		root ${options.rootPath}/;
 	}
 
-	access_log /var/log/nginx/${params.name}/${params.subsite}_access.log;
-	error_log /var/log/nginx/${params.name}/${params.subsite}_error.log info;
+	access_log /var/log/nginx/${options.name}/${options.subfolder}_access.log;
+	error_log /var/log/nginx/${options.name}/${options.subfolder}_error.log info;
+
+	${options.ssl ? 'ssl_certificate /etc/letsencrypt/live/' + options.domain + '/fullchain.pem;' : '#'}
+	${options.ssl ? 'ssl_certificate_key /etc/letsencrypt/live/' + options.domain + '/privkey.pem;' : '#'}
+	${options.ssl ? 'include snippets/ssl.conf;' : '#'}
+	${options.ssl ? 'ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;' : '#'}
 }
 
 `
-	fs.outputFile(`./outputs/nginx/${params.name}.conf`, content, { flag: 'a+' })
-		.then(() => console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Nginx Vhost created`, colors.reset))
-		.catch(err => console.error(colors.fg.red, `${params.name} ${params.subdomain} → ❌ ${err}`, colors.reset))
+	fs.outputFile(`./outputs/nginx/${options.name}.conf`, content, { flag: 'a+' })
+		.then(() => console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Nginx Vhost created`, colors.reset))
+		.catch(err => console.error(colors.fg.red, `${options.name} ${options.subdomain} → ❌ ${err}`, colors.reset))
 }
 
 /**
  * Logs
  */
 const logs = () => {
-	createFolder(`./outputs/logs/apache2/${params.name}/`)
-	createFolder(`./outputs/logs/nginx/${params.name}/`)
+	createFolder(`./outputs/logs/apache2/${options.name}/`)
+	createFolder(`./outputs/logs/nginx/${options.name}/`)
 }
 
 /**
  * Hooks
  */
 const hook = () => {
-	if (!params.hook) return
+	if (!options.hook) return
 	const hookFilePath = './outputs/hooks/hooks.json'
 
 	if (!fs.existsSync(hookFilePath)) {
@@ -133,9 +139,9 @@ const hook = () => {
 	const hooks = JSON.parse(file)
 
 	const content = {
-    id: `deploy-${params.name}`,
-    "execute-command": `/usr/share/hooks/${params.name}-${params.subsite}/deploy.sh`,
-    "command-working-directory": `/var/www/${params.name}/${params.subsite}/`,
+    id: `deploy-${options.name}`,
+    "execute-command": `/usr/share/hooks/${options.name}-${options.subfolder}/deploy.sh`,
+    "command-working-directory": `/var/www/${options.name}/${options.subfolder}/`,
     "pass-arguments-to-command":
     [
       {
@@ -144,11 +150,11 @@ const hook = () => {
       },
       {
         "source": "payload",
-        "name": `${params.name}`
+        "name": `${options.name}`
       },
       {
         "source": "payload",
-        "name":  `social@${params.domain}`
+        "name":  `social@${options.domain}`
       }
     ],
     "response-message": "Déploiement…",
@@ -160,7 +166,7 @@ const hook = () => {
           "match":
           {
             "type": "payload-hash-sha1",
-            "secret": `${params.hookPassphrase}`,
+            "secret": `${options.hook}`,
             "parameter":
             {
               "source": "header",
@@ -187,20 +193,20 @@ const hook = () => {
 	hooks.push(content)
 	fs.outputFile(hookFilePath, JSON.stringify(hooks, null, 2))
 
-	console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Hooks added`, colors.reset)
+	console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Hooks added`, colors.reset)
 
 const scriptContent = `#!/bin/bash
 
-exec > /usr/share/hooks/${params.name}-${params.subsite}/output.log 2>&1
+exec > /usr/share/hooks/${options.name}-${options.subfolder}/output.log 2>&1
 
 git fetch --all
 git checkout --force "origin/main"
 `
 
-	fs.outputFile(`./outputs/hooks/${params.name}-${params.subsite}/deploy.sh`, scriptContent)
-	console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Hooks deploy script created`, colors.reset)
+	fs.outputFile(`./outputs/hooks/${options.name}-${options.subfolder}/deploy.sh`, scriptContent)
+	console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Hooks deploy script created`, colors.reset)
 
-	exec(`chmod +x ./outputs/hooks/${params.name}-${params.subsite}/deploy.sh`, (err, stdout, stderr) => {
+	exec(`chmod +x ./outputs/hooks/${options.name}-${options.subfolder}/deploy.sh`, (err, stdout, stderr) => {
 		if (err) {
 			console.error(colors.fg.red, `${err}`, colors.reset)
 			return
@@ -211,7 +217,7 @@ git checkout --force "origin/main"
 			return
 		}
 
-		console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Hooks deploy script ready (${stdout})`, colors.reset)
+		console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Hooks deploy script ready (${stdout})`, colors.reset)
 	})
 }
 
@@ -219,21 +225,21 @@ git checkout --force "origin/main"
  * Certbot
  */
 const certbot = () => {
-	if (!params.certbot) return
+	if (!options.ssl) return
 
 	exec('ls', (error, stdout, stderr) => {
 		if (error) {
-			console.error(colors.fg.red, `${params.name} ${params.subdomain} → ❌ ${error}`, colors.reset)
+			console.error(colors.fg.red, `${options.name} ${options.subdomain} → ❌ ${error}`, colors.reset)
 			return
 		}
 
 		if (stderr) {
-			console.error(colors.fg.red, `${params.name} ${params.subdomain} → ❌ ${stderr}`, colors.reset)
+			console.error(colors.fg.red, `${options.name} ${options.subdomain} → ❌ ${stderr}`, colors.reset)
 			return
 		}
 
 		console.log(stdout)
-		console.log(colors.fg.green, `${params.name} ${params.subdomain} → ✔️ Hook executed`, colors.reset)
+		console.log(colors.fg.green, `${options.name} ${options.subdomain} → ✔️ Hook executed`, colors.reset)
 	})
 }
 
@@ -242,4 +248,3 @@ nginxVhost()
 logs()
 hook()
 certbot()
-
